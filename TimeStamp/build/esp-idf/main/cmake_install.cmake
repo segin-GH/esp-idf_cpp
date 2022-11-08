@@ -1,4 +1,4 @@
-# Install script for directory: /home/bot/code/esp-idf/esp-idf_cpp/TimeStamp/main
+# Install script for directory: /home/bot/code/esp-idf_cpp/TimeStamp/main
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

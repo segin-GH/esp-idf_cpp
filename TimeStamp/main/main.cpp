@@ -32,12 +32,11 @@ void app_main(void)
     while(true)
     {
         std::string data = getTimeStamp(tv);
+	int64_t time_us = (int64_t)tv.tv_sec * 1000000L + (int64_t)tv.tv_usec;
         std::string uartData = "luffy";
-        std::string newData = data + ":" + uartData;
-        std::cout << newData << std::endl;
+        data = data + ":" + uartData;
+        std::cout << data << std::endl;
         vTaskDelay(2000/portTICK_PERIOD_MS);
     }
 
-
 }
-
