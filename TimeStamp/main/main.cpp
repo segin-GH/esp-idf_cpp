@@ -32,6 +32,7 @@ void app_main(void)
     while(true)
     {
         std::string data = getTimeStamp(tv);
+	int64_t time_us = (int64_t)tv.tv_sec * 1000000L + (int64_t)tv.tv_usec;
         std::string uartData = "luffy";
         data = data + ":" + uartData;
         std::cout << data << std::endl;
@@ -39,4 +40,3 @@ void app_main(void)
     }
 
 }
-
