@@ -1075,3 +1075,5 @@
 3155	3269	1667976438289166133	.bin_timestamp	887fe0c6c9236280
 3269	3298	0	esp-idf/esptool_py/CMakeFiles/app_check_size	1afdf5f8206b695a
 3298	17652	0	CMakeFiles/flash	210a74101ca6034d
+1104	14480	1667977503756470040	build.ninja	c28db3afd5cab7c3
+0	32627	0	CMakeFiles/menuconfig	4db3c4d476353c49
