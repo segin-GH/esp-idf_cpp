@@ -1,11 +1,15 @@
-#include <stdio.h>
+#include <iostream>
+#include <string>
+#include <fstream>
+#include <cstdio>
+// #include <stdio.h>
 #include <esp_spiffs.h>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
 extern "C" {
-    void app_main(void)
+    void app_main(void);
 }
 
 #define TAG "SPIFFS" 
@@ -20,6 +24,9 @@ void app_main(void)
     };
     esp_vfs_spiffs_register(&config);   
 
+
+// /* c style
+
     FILE *file = fopen("/spiffs/sub/data.txt", "r");
     if(file == NULL)
     {
@@ -31,10 +38,12 @@ void app_main(void)
         while(fgets(line, sizeof(line), file) != NULL)
         {
             vTaskDelay(10/portTICK_PERIOD_MS);
-            printf(line);
+            std::cout << line;
         }
         fclose(file);
     }
+
+// */
 
     esp_vfs_spiffs_unregister(NULL);
 

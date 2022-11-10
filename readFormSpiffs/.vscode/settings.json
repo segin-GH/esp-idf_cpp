@@ -12,6 +12,7 @@
     "idf.pythonBinPath": "/home/bot/esp/esp-idf/tools/python_env/idf4.4_py3.8_env/bin/python",
     "idf.toolsPath": "/home/bot/esp/esp-idf/tools",
     "files.associations": {
-        "task.h": "c"
+        "task.h": "c",
+        "*.tcc": "cpp"
     }
 }
