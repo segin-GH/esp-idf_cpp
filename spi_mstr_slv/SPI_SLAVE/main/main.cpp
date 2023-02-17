@@ -18,9 +18,9 @@
 bool masterSelectedMe = pdFALSE;
 int intr_trig = 0;
 
+// xQueueHandle queue;
+// static const int queue_len = 5;
 WORD_ALIGNED_ATTR char dataBuff[150] = "";
-xQueueHandle queue;
-static const int queue_len = 5;
 
 static void IRAM_ATTR gpio_isr_handler(void *args)
 {
@@ -36,6 +36,8 @@ class SpiSlave
 {
 private:
     spi_host_device_t m_host;
+    const int queue_len = 10;
+    xQueueHandle queue;
 
 public:
     SpiSlave(spi_host_device_t host, int mosi, int miso, int sclk)
@@ -66,21 +68,42 @@ public:
         // Initialize SPI slave interface
         ret = spi_slave_initialize(host, &buscfg, &slvcfg, SPI_DMA_CH_AUTO);
         assert(ret == ESP_OK);
+
+        queue = xQueueCreate(queue_len, sizeof(dataBuff));
+    }
+    void dataToSnd(char *data)
+    {
+        std::cout << data << std::endl;
+        long err = xQueueSend(queue, data, 1500 / portTICK_PERIOD_MS);
+        if (!err)
+        {
+            printf("[queue] Could not add to queue\n.");
+        }
     }
 
-    esp_err_t transmit(spi_host_device_t host, char txBuff[], int tx_len, char rxBuff[], int rx_len)
+    esp_err_t transmit(spi_host_device_t host, char *recvBuf)
     {
-        /* TODO can spi_transaction_t in private ? */
-        spi_slave_transaction_t t;
-        memset(&t, 0, sizeof(t));
-        t.length = (tx_len + rx_len) * 8;
-        t.tx_buffer = txBuff;
-        t.rx_buffer = rxBuff;
-        // t.user = (void *)0; // Set the slave ID to 0
-        // TODO figure out a way to use m_host rather than passing it as args in function.
-        return spi_slave_transmit(host, &t, portMAX_DELAY);
+        WORD_ALIGNED_ATTR char sendBuf[150] = "";
+
+        if (xQueueReceive(queue, sendBuf, 5000 / portTICK_PERIOD_MS))
+        {
+            std::cout << "xQueueReceive :: " << sendBuf << std::endl;
+            /* TODO can spi_transaction_t in private ? */
+            spi_slave_transaction_t t;
+            memset(&t, 0, sizeof(t));
+            t.length = (130 + 130) * 8;
+            t.tx_buffer = sendBuf;
+            t.rx_buffer = recvBuf;
+            // t.user = (void *)0; // Set the slave ID to 0
+            // TODO figure out a way to use m_host rather than passing it as args in function.
+            return spi_slave_transmit(host, &t, portMAX_DELAY);
+            memset(sendBuf, 0, sizeof(sendBuf));
+        }
+        return ESP_FAIL;
     }
 };
+
+SpiSlave spi_slave(HSPI_HOST, GPIO_MOSI, GPIO_MISO, GPIO_SCLK);
 
 void logWithUART(void *args)
 {
@@ -88,23 +111,17 @@ void logWithUART(void *args)
     while (true)
     {
         sprintf(dataBuff, "uartDATA%i", count);
-        long err = xQueueSend(queue, &dataBuff, 1500 / portTICK_PERIOD_MS);
-        if (!err)
-        {
-            printf("[queue] Could not add to queue\n.");
-        }
+        spi_slave.dataToSnd(dataBuff);
         memset(dataBuff, 0, sizeof(dataBuff));
         ++count;
         vTaskDelay(600 / portTICK_PERIOD_MS);
     }
 }
 
-SpiSlave spi_slave(HSPI_HOST, GPIO_MOSI, GPIO_MISO, GPIO_SCLK);
-
 extern "C" void app_main()
 {
-    int n = 0;
-    queue = xQueueCreate(queue_len, sizeof(dataBuff));
+    // int n = 0;
+    // queue = xQueueCreate(queue_len, sizeof(dataBuff));
     std::cout << "SPI SLAVE" << std::endl;
 
     gpio_set_direction((gpio_num_t)CHIP_SELECT, GPIO_MODE_INPUT);
@@ -123,7 +140,7 @@ extern "C" void app_main()
         NULL,
         APP_CPU_NUM);
 
-    WORD_ALIGNED_ATTR char sendBuf[129] = "";
+    // WORD_ALIGNED_ATTR char sendBuf[129] = "";
     WORD_ALIGNED_ATTR char recvBuf[129] = "";
 
     for (;;)
@@ -131,20 +148,21 @@ extern "C" void app_main()
         // std::cout << "INSIDE WHILE LOOP" << intr_trig << std::endl;
         if (masterSelectedMe)
         {
-            memset(sendBuf, 0, sizeof(129));
+            // memset(sendBuf, 0, sizeof(129));
             memset(recvBuf, 0, sizeof(129));
-            sprintf(sendBuf, "This is the receiver %i", n++);
-            // std::cout << "master slected me sending data " << sendBuf << std::endl;
+            // sprintf(sendBuf, "This is the receiver %i", n++);
+            // // std::cout << "master slected me sending data " << sendBuf << std::endl;
 
-            if (xQueueReceive(queue, &sendBuf, 5000 / portTICK_PERIOD_MS))
+            // if (xQueueReceive(queue, &sendBuf, 5000 / portTICK_PERIOD_MS))
             {
-                esp_err_t ret = spi_slave.transmit(HSPI_HOST, sendBuf, transferBufSize, recvBuf, transferBufSize);
+                esp_err_t ret = spi_slave.transmit(HSPI_HOST, recvBuf);
                 if (ret == ESP_OK)
                     std::cout << recvBuf << std::endl;
                 vTaskDelay(600 / portTICK_PERIOD_MS);
             }
+            // }
+            // else
+            //     vTaskDelay(600 / portTICK_PERIOD_MS);
         }
-        else
-            vTaskDelay(600 / portTICK_PERIOD_MS);
     }
 }

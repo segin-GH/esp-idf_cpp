@@ -12,6 +12,9 @@
     "idf.pythonBinPath": "/home/bot/.espressif/python_env/idf4.4_py3.10_env/bin/python",
     "idf.toolsPath": "/home/bot/.espressif",
     "files.associations": {
-        "iostream": "cpp"
+        "iostream": "cpp",
+        "array": "cpp",
+        "string": "cpp",
+        "string_view": "cpp"
     }
 }
