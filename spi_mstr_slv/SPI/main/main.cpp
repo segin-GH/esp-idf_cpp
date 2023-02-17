@@ -21,8 +21,13 @@
 #define GPIO_SCLK 18
 #define GPIO_CS 15
 
+#define transferBufSize 130
+
 class SpiMaster
 {
+private:
+    spi_device_handle_t m_spi;
+
 public:
     SpiMaster(spi_host_device_t host, int mosi, int miso, int sclk, int cs)
     {
@@ -32,7 +37,7 @@ public:
             .sclk_io_num = sclk,
             .quadwp_io_num = -1,
             .quadhd_io_num = -1,
-            };
+        };
 
         spi_device_interface_config_t devcfg = {
             .command_bits = 0,
@@ -42,31 +47,27 @@ public:
             .duty_cycle_pos = 128, // 50% duty cycle
             .cs_ena_posttrans = 3, // Keep the CS low 3 cycles after transaction, to stop slave from missing the last bit when CS has less propagation delay than CLK
             .clock_speed_hz = 5000000,
-            .spics_io_num = -1,
+            .spics_io_num = -1, // -1 bcz no slave select pin;
             .queue_size = 6,
         };
 
         esp_err_t ret;
-        ret = spi_bus_initialize(host, &buscfg, 1);
+        ret = spi_bus_initialize(host, &buscfg, SPI_DMA_CH_AUTO);
         assert(ret == ESP_OK);
         ret = spi_bus_add_device(host, &devcfg, &m_spi);
         assert(ret == ESP_OK);
     }
 
-    esp_err_t
-    transfer(const uint8_t *tx_data, int tx_len, uint8_t *rx_data, int rx_len)
+    esp_err_t transfer(char txBuff[], int tx_len, char rxBuff[], int rx_len)
     {
         spi_transaction_t t;
         memset(&t, 0, sizeof(t));
         t.length = (tx_len + rx_len) * 8;
-        t.tx_buffer = tx_data;
-        t.rx_buffer = rx_data;
-        t.user = (void *)0; // Set the slave ID to 0
+        t.tx_buffer = txBuff;
+        t.rx_buffer = rxBuff;
+        // t.user = (void *)0; // Set the slave ID to 0
         return spi_device_transmit(m_spi, &t);
     }
-
-private:
-    spi_device_handle_t m_spi;
 };
 
 extern "C" void app_main(void)
@@ -74,15 +75,22 @@ extern "C" void app_main(void)
     std::cout << "SPI MASTER" << std::endl;
 
     SpiMaster spi_master(HSPI_HOST, GPIO_MOSI, GPIO_MISO, GPIO_SCLK, GPIO_CS);
-    uint8_t tx_data[3] = {0x01, 0x02, 0x03};
-    uint8_t rx_data[3];
-    esp_err_t ret = spi_master.transfer(tx_data, 3, rx_data, 3);
-    if (ret == ESP_OK)
+
+    char sendBuf[130] = {0};
+    char recvBuf[130] = {0};
+
+    for (int i = 0; i < 10; i++)
     {
-        std::cout << rx_data[3] << std::endl;
+        int res = snprintf(sendBuf, sizeof(sendBuf), "%i I am Master obey Slaves", i);
+        if (res >= sizeof(sendBuf))
+            printf("Data truncated\n");
+
+        esp_err_t ret = spi_master.transfer(sendBuf, transferBufSize, recvBuf, transferBufSize);
+        if (ret == ESP_OK)
+            std::cout << recvBuf << std::endl;
+        vTaskDelay(1000/portTICK_PERIOD_MS);
     }
-    else
-    {
-        // Error occurred during transfer
-    }
+
+    for(;;)
+        vTaskDelete(NULL);
 }
