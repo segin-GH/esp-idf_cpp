@@ -36,7 +36,7 @@ class SpiSlave
 {
 private:
     spi_host_device_t m_host;
-    const int queue_len = 10;
+    const int queue_len = 20;
     xQueueHandle queue;
 
 public:
@@ -114,7 +114,7 @@ void logWithUART(void *args)
         spi_slave.dataToSnd(dataBuff);
         memset(dataBuff, 0, sizeof(dataBuff));
         ++count;
-        vTaskDelay(600 / portTICK_PERIOD_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
 
@@ -164,5 +164,6 @@ extern "C" void app_main()
             // else
             //     vTaskDelay(600 / portTICK_PERIOD_MS);
         }
+        vTaskDelay(10/portTICK_PERIOD_MS);
     }
 }
