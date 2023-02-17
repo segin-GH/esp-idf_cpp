@@ -79,7 +79,11 @@ extern "C" void app_main(void)
     char sendBuf[130] = {0};
     char recvBuf[130] = {0};
 
-    for (int i = 0; i < 10; i++)
+    gpio_set_direction(gpio_num_t(GPIO_CS), GPIO_MODE_OUTPUT);
+    gpio_pullup_en(gpio_num_t(GPIO_CS));
+    gpio_set_level(gpio_num_t(GPIO_CS), 0);
+
+    for (int i = 0; i < 100; i++)
     {
         int res = snprintf(sendBuf, sizeof(sendBuf), "%i I am Master obey Slaves", i);
         if (res >= sizeof(sendBuf))
@@ -88,9 +92,11 @@ extern "C" void app_main(void)
         esp_err_t ret = spi_master.transfer(sendBuf, transferBufSize, recvBuf, transferBufSize);
         if (ret == ESP_OK)
             std::cout << recvBuf << std::endl;
-        vTaskDelay(1000/portTICK_PERIOD_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 
-    for(;;)
+    gpio_set_level((gpio_num_t)GPIO_CS, 1);
+
+    for (;;)
         vTaskDelete(NULL);
 }

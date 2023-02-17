@@ -32,6 +32,13 @@ class SpiSlave
 {
 private:
     spi_host_device_t m_host;
+    xQueueHandle sndQueue;
+    const int sndQueueLen = 5;
+    spi_slave_transaction_t t;
+    WORD_ALIGNED_ATTR char dataBuff[130] = "";
+
+public:
+    WORD_ALIGNED_ATTR char recvBuf[129] = "";
 
 public:
     SpiSlave(spi_host_device_t host, int mosi, int miso, int sclk)
@@ -62,31 +69,80 @@ public:
         // Initialize SPI slave interface
         ret = spi_slave_initialize(host, &buscfg, &slvcfg, SPI_DMA_CH_AUTO);
         assert(ret == ESP_OK);
+
+        //  TODO implement proper Size for queue
+        sndQueue = xQueueCreate(sndQueueLen, sizeof(130));
+        memset(&t, 0, sizeof(t));
     }
 
-    esp_err_t transmit(spi_host_device_t host, char txBuff[], int tx_len, char rxBuff[], int rx_len)
+    void dataToSend(char data[])
+    {
+        /* TODO portMAX_DELAY really code smells bad ..... */
+        long err = xQueueSend(sndQueue, &data, 1500 / portTICK_PERIOD_MS);
+        if (!err)
+            std::cout << "UNABLE TO SEND TO QUEUE" << std::endl;
+    }
+
+    esp_err_t transmit(spi_host_device_t host)
     {
         /* TODO can spi_transaction_t in private ? */
-        if (masterSelectedMe)
+        // spi_slave_transaction_t t;
+        // memset(&t, 0, sizeof(t));
+
+        if (xQueueReceive(sndQueue, &dataBuff, 5000 / portTICK_PERIOD_MS))
         {
-            spi_slave_transaction_t t;
-            memset(&t, 0, sizeof(t));
-            t.length = (tx_len + rx_len) * 8;
-            t.tx_buffer = txBuff;
-            t.rx_buffer = rxBuff;
+            std::cout << "THIS IS AFTER QUEUE IS RECEIVED " << dataBuff << std::endl;
+            // TODO fix hardcoded value
+            t.length = (129 + 129) * 8;
+            t.tx_buffer = dataBuff;
+            t.rx_buffer = recvBuf;
             // t.user = (void *)0; // Set the slave ID to 0
             // TODO figure out a way to use m_host rather than passing it as args in function.
             return spi_slave_transmit(host, &t, portMAX_DELAY);
         }
+        std::cout << "UNABLE TO SEND DATA" << std::endl;
         return ESP_FAIL;
     }
 };
 
-extern "C" void app_main()
+SpiSlave spi_slave(HSPI_HOST, GPIO_MOSI, GPIO_MISO, GPIO_SCLK);
+
+void sendDataThroughSPI(void *args)
+{
+    for (;;)
+    {
+        std::cout << "INSIDE SEND LOOP " << intr_trig << std::endl;
+        // TODO implement a mutex or task suspend
+        if (masterSelectedMe)
+        {
+            esp_err_t err = spi_slave.transmit(HSPI_HOST);
+            if (err == ESP_OK)
+                std::cout << spi_slave.recvBuf << std::endl;
+        }
+        else
+            vTaskDelay(100);
+    }
+}
+
+void logWithUART(void *args)
 {
     int n = 0;
+    WORD_ALIGNED_ATTR char sendBuf[129] = "";
+
+    for (;;)
+    {
+        ++n;
+        memset(sendBuf, 0, sizeof(sendBuf));
+        sprintf(sendBuf, "This is the receiver %i", n);
+        spi_slave.dataToSend(sendBuf);
+        std::cout << "THIS IS AFTER SND TO QUEUE " << sendBuf << std::endl;
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+}
+
+extern "C" void app_main()
+{
     std::cout << "SPI SLAVE" << std::endl;
-    SpiSlave spi_slave(HSPI_HOST, GPIO_MOSI, GPIO_MISO, GPIO_SCLK);
 
     gpio_set_direction((gpio_num_t)CHIP_SELECT, GPIO_MODE_INPUT);
     gpio_pullup_en((gpio_num_t)CHIP_SELECT);
@@ -95,25 +151,40 @@ extern "C" void app_main()
     gpio_install_isr_service(0);
     gpio_isr_handler_add((gpio_num_t)CHIP_SELECT, gpio_isr_handler, NULL);
 
-    WORD_ALIGNED_ATTR char sendBuf[129] = "";
-    WORD_ALIGNED_ATTR char recvBuf[129] = "";
+    xTaskCreatePinnedToCore(
+        sendDataThroughSPI,
+        "sendDataThroughSPI",
+        2048,
+        NULL,
+        2,
+        NULL,
+        APP_CPU_NUM);
 
-    for (;;)
-    {
-        std::cout << "INSIDE WHILE LOOP" << intr_trig << std::endl;
-        if (masterSelectedMe)
-        {
-            ++n;
-            memset(sendBuf, 0, sizeof(sendBuf));
-            memset(recvBuf, 0, sizeof(recvBuf));
-            sprintf(sendBuf, "This is the receiver %i", n);
+    xTaskCreatePinnedToCore(
+        logWithUART,
+        "logWithUART",
+        2048,
+        NULL,
+        2,
+        NULL,
+        APP_CPU_NUM);
 
-            esp_err_t ret = spi_slave.transmit(HSPI_HOST, sendBuf, transferBufSize, recvBuf, transferBufSize);
-            if (ret == ESP_OK)
-                std::cout << recvBuf << std::endl;
-            vTaskDelay(600 / portTICK_PERIOD_MS);
-        }
-        else
-            vTaskDelay(600 / portTICK_PERIOD_MS);
-    }
+    // WORD_ALIGNED_ATTR char recvBuf[129] = "";
+
+    // for (;;)
+    // {
+    //     std::cout << "INSIDE WHILE LOOP" << intr_trig << std::endl;
+    //     if (masterSelectedMe)
+    //     {
+    //         ++n;
+    //         memset(recvBuf, 0, sizeof(recvBuf));
+
+    //         esp_err_t ret = spi_slave.transmit(HSPI_HOST, sendBuf, transferBufSize, recvBuf, transferBufSize);
+    //         if (ret == ESP_OK)
+    //             std::cout << recvBuf << std::endl;
+    //         vTaskDelay(600 / portTICK_PERIOD_MS);
+    //     }
+    //     else
+    //         vTaskDelay(600 / portTICK_PERIOD_MS);
+    // }
 }
