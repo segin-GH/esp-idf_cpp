@@ -18,6 +18,10 @@
 bool masterSelectedMe = pdFALSE;
 int intr_trig = 0;
 
+WORD_ALIGNED_ATTR char dataBuff[150] = "";
+xQueueHandle queue;
+static const int queue_len = 5;
+
 static void IRAM_ATTR gpio_isr_handler(void *args)
 {
     ++intr_trig;
@@ -67,26 +71,41 @@ public:
     esp_err_t transmit(spi_host_device_t host, char txBuff[], int tx_len, char rxBuff[], int rx_len)
     {
         /* TODO can spi_transaction_t in private ? */
-        if (masterSelectedMe)
-        {
-            spi_slave_transaction_t t;
-            memset(&t, 0, sizeof(t));
-            t.length = (tx_len + rx_len) * 8;
-            t.tx_buffer = txBuff;
-            t.rx_buffer = rxBuff;
-            // t.user = (void *)0; // Set the slave ID to 0
-            // TODO figure out a way to use m_host rather than passing it as args in function.
-            return spi_slave_transmit(host, &t, portMAX_DELAY);
-        }
-        return ESP_FAIL;
+        spi_slave_transaction_t t;
+        memset(&t, 0, sizeof(t));
+        t.length = (tx_len + rx_len) * 8;
+        t.tx_buffer = txBuff;
+        t.rx_buffer = rxBuff;
+        // t.user = (void *)0; // Set the slave ID to 0
+        // TODO figure out a way to use m_host rather than passing it as args in function.
+        return spi_slave_transmit(host, &t, portMAX_DELAY);
     }
 };
+
+void logWithUART(void *args)
+{
+    int count = 0;
+    while (true)
+    {
+        sprintf(dataBuff, "uartDATA%i", count);
+        long err = xQueueSend(queue, &dataBuff, 1500 / portTICK_PERIOD_MS);
+        if (!err)
+        {
+            printf("[queue] Could not add to queue\n.");
+        }
+        memset(dataBuff, 0, sizeof(dataBuff));
+        ++count;
+        vTaskDelay(600 / portTICK_PERIOD_MS);
+    }
+}
+
+SpiSlave spi_slave(HSPI_HOST, GPIO_MOSI, GPIO_MISO, GPIO_SCLK);
 
 extern "C" void app_main()
 {
     int n = 0;
+    queue = xQueueCreate(queue_len, sizeof(dataBuff));
     std::cout << "SPI SLAVE" << std::endl;
-    SpiSlave spi_slave(HSPI_HOST, GPIO_MOSI, GPIO_MISO, GPIO_SCLK);
 
     gpio_set_direction((gpio_num_t)CHIP_SELECT, GPIO_MODE_INPUT);
     gpio_pullup_en((gpio_num_t)CHIP_SELECT);
@@ -95,23 +114,35 @@ extern "C" void app_main()
     gpio_install_isr_service(0);
     gpio_isr_handler_add((gpio_num_t)CHIP_SELECT, gpio_isr_handler, NULL);
 
+    xTaskCreatePinnedToCore(
+        logWithUART,
+        "logWithUART",
+        2048,
+        NULL,
+        2,
+        NULL,
+        APP_CPU_NUM);
+
     WORD_ALIGNED_ATTR char sendBuf[129] = "";
     WORD_ALIGNED_ATTR char recvBuf[129] = "";
 
     for (;;)
     {
-        std::cout << "INSIDE WHILE LOOP" << intr_trig << std::endl;
+        // std::cout << "INSIDE WHILE LOOP" << intr_trig << std::endl;
         if (masterSelectedMe)
         {
-            ++n;
-            memset(sendBuf, 0, sizeof(sendBuf));
-            memset(recvBuf, 0, sizeof(recvBuf));
-            sprintf(sendBuf, "This is the receiver %i", n);
+            memset(sendBuf, 0, sizeof(129));
+            memset(recvBuf, 0, sizeof(129));
+            sprintf(sendBuf, "This is the receiver %i", n++);
+            // std::cout << "master slected me sending data " << sendBuf << std::endl;
 
-            esp_err_t ret = spi_slave.transmit(HSPI_HOST, sendBuf, transferBufSize, recvBuf, transferBufSize);
-            if (ret == ESP_OK)
-                std::cout << recvBuf << std::endl;
-            vTaskDelay(600 / portTICK_PERIOD_MS);
+            if (xQueueReceive(queue, &sendBuf, 5000 / portTICK_PERIOD_MS))
+            {
+                esp_err_t ret = spi_slave.transmit(HSPI_HOST, sendBuf, transferBufSize, recvBuf, transferBufSize);
+                if (ret == ESP_OK)
+                    std::cout << recvBuf << std::endl;
+                vTaskDelay(600 / portTICK_PERIOD_MS);
+            }
         }
         else
             vTaskDelay(600 / portTICK_PERIOD_MS);
