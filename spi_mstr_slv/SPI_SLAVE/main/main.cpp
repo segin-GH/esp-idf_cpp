@@ -15,26 +15,45 @@
 #define BUF_SIZE 1024
 #define transferBufSize 130
 
-bool masterSelectedMe = pdFALSE;
-int intr_trig = 0;
+// bool masterSelectedMe = pdFALSE;
+// int intr_trig = 0;
 
-static void IRAM_ATTR gpio_isr_handler(void *args)
-{
-    ++intr_trig;
+// static void IRAM_ATTR gpio_isr_handler(void *args)
+// {
+//     ++intr_trig;
 
-    if (gpio_get_level((gpio_num_t)CHIP_SELECT) == 0)
-        masterSelectedMe = pdTRUE;
-    else
-        masterSelectedMe = pdFALSE;
-}
+//     if (gpio_get_level((gpio_num_t)CHIP_SELECT) == 0)
+//         masterSelectedMe = pdTRUE;
+//     else
+//         masterSelectedMe = pdFALSE;
+// }
 
 class SpiSlave
 {
 private:
     spi_host_device_t m_host;
+    xQueueHandle spiSndQueue;
+    const int spiSndQueueLen = 5;
+    WORD_ALIGNED_ATTR char dataBuff[150] = "";
+    static bool masterSelectedMe = pdFALSE;
+    int intr_trig = 0;
+
+
+    static void IRAM_ATTR gpio_isr_handler(void *arg)
+    {
+        ++intr_trig;
+
+        if (gpio_get_level((gpio_num_t)CHIP_SELECT) == 0)
+            masterSelectedMe = pdTRUE;
+        else
+            masterSelectedMe = pdFALSE;
+    }
 
 public:
-    SpiSlave(spi_host_device_t host, int mosi, int miso, int sclk)
+    WORD_ALIGNED_ATTR char recvBuff[150] = "";
+
+public:
+    SpiSlave(spi_host_device_t host, int mosi, int miso, int sclk, int cs)
     {
         this->m_host = host;
         esp_err_t ret;
@@ -62,58 +81,118 @@ public:
         // Initialize SPI slave interface
         ret = spi_slave_initialize(host, &buscfg, &slvcfg, SPI_DMA_CH_AUTO);
         assert(ret == ESP_OK);
+
+        spiSndQueue = xQueueCreate(spiSndQueueLen, sizeof(dataBuff));
+
+        gpio_set_direction((gpio_num_t)cs, GPIO_MODE_INPUT);
+        gpio_pullup_en((gpio_num_t)cs);
+        gpio_set_intr_type((gpio_num_t)cs, GPIO_INTR_ANYEDGE);
+
+        gpio_install_isr_service(0);
+        gpio_isr_handler_add((gpio_num_t)cs, gpio_isr_handler, NULL);
     }
 
-    esp_err_t transmit(spi_host_device_t host, char txBuff[], int tx_len, char rxBuff[], int rx_len)
+    void dataToSend(char txData[])
+    {
+        long err = xQueueSend(spiSndQueue, &txData, portMAX_DELAY);
+        if (!err)
+            std::cout << "Could Not Send queue FULL" << std::endl;
+        else
+            memset(txData, 0, sizeof(130));
+
+        // TODO  this memset needed ?
+    }
+
+    esp_err_t transmit(spi_host_device_t host)
     {
         /* TODO can spi_transaction_t in private ? */
         if (masterSelectedMe)
         {
             spi_slave_transaction_t t;
             memset(&t, 0, sizeof(t));
-            t.length = (tx_len + rx_len) * 8;
-            t.tx_buffer = txBuff;
-            t.rx_buffer = rxBuff;
-            // t.user = (void *)0; // Set the slave ID to 0
-            // TODO figure out a way to use m_host rather than passing it as args in function.
-            return spi_slave_transmit(host, &t, portMAX_DELAY);
+            if (xQueueReceive(spiSndQueue, &t.tx_buffer, portMAX_DELAY))
+            {
+                t.length = (130 + 130) * 8;
+                // t.tx_buffer = txBuff;
+                t.rx_buffer = recvBuff;
+                // t.user = (void *)0; // Set the slave ID to 0
+                // TODO figure out a way to use m_host rather than passing it as args in function.
+                return spi_slave_transmit(host, &t, portMAX_DELAY);
+            }
         }
         return ESP_FAIL;
     }
 };
 
+SpiSlave spi_slave(HSPI_HOST, GPIO_MOSI, GPIO_MISO, GPIO_SCLK, CHIP_SELECT);
+
+void logWithUART(void *args)
+{
+    WORD_ALIGNED_ATTR char sendBuf[129] = "";
+
+    int count = 0;
+    while (true)
+    {
+        sprintf(sendBuf, "uartDATA %i", count);
+        spi_slave.dataToSend(sendBuf);
+        memset(sendBuf, 0, sizeof(sendBuf));
+        ++count;
+        vTaskDelay(600 / portTICK_PERIOD_MS);
+    }
+}
+void sendDataThroughSPI(void *args)
+{
+    spi_slave.transmit(HSPI_HOST);
+}
+
 extern "C" void app_main()
 {
-    int n = 0;
     std::cout << "SPI SLAVE" << std::endl;
-    SpiSlave spi_slave(HSPI_HOST, GPIO_MOSI, GPIO_MISO, GPIO_SCLK);
 
-    gpio_set_direction((gpio_num_t)CHIP_SELECT, GPIO_MODE_INPUT);
-    gpio_pullup_en((gpio_num_t)CHIP_SELECT);
-    gpio_set_intr_type((gpio_num_t)CHIP_SELECT, GPIO_INTR_ANYEDGE);
+    xTaskCreatePinnedToCore(
+        logWithUART,
+        "logWithUART",
+        2048,
+        NULL,
+        2,
+        NULL,
+        APP_CPU_NUM);
 
-    gpio_install_isr_service(0);
-    gpio_isr_handler_add((gpio_num_t)CHIP_SELECT, gpio_isr_handler, NULL);
+    xTaskCreatePinnedToCore(
+        sendDataThroughSPI,
+        "sendDataThroughSPI",
+        2048,
+        NULL,
+        2,
+        NULL,
+        APP_CPU_NUM);
 
-    WORD_ALIGNED_ATTR char sendBuf[129] = "";
-    WORD_ALIGNED_ATTR char recvBuf[129] = "";
+    // for (;;)
+    // {
+    //     // std::cout << "INSIDE WHILE LOOP" << intr_trig << std::endl;
 
-    for (;;)
-    {
-        std::cout << "INSIDE WHILE LOOP" << intr_trig << std::endl;
-        if (masterSelectedMe)
-        {
-            ++n;
-            memset(sendBuf, 0, sizeof(sendBuf));
-            memset(recvBuf, 0, sizeof(recvBuf));
-            sprintf(sendBuf, "This is the receiver %i", n);
+    //     ++n;
+    //     memset(recvBuf, 0, sizeof(recvBuf));
+    //     sprintf(sendBuf, "This is the receiver %i", n);
 
-            esp_err_t ret = spi_slave.transmit(HSPI_HOST, sendBuf, transferBufSize, recvBuf, transferBufSize);
-            if (ret == ESP_OK)
-                std::cout << recvBuf << std::endl;
-            vTaskDelay(600 / portTICK_PERIOD_MS);
-        }
-        else
-            vTaskDelay(600 / portTICK_PERIOD_MS);
-    }
+    //     spi_slave.dataToSend(sendBuf);
+    //     vTaskDelay(600 / portTICK_PERIOD_MS);
+
+    //     std::cout << spi_slave.recvBuff << std::endl;
+
+    //     // if (masterSelectedMe)
+    //     // {
+    //     //     ++n;
+    //     //     memset(sendBuf, 0, sizeof(sendBuf));
+    //     //     memset(recvBuf, 0, sizeof(recvBuf));
+    //     //     sprintf(sendBuf, "This is the receiver %i", n);
+
+    //     //     esp_err_t ret = spi_slave.transmit(HSPI_HOST, sendBuf, transferBufSize, recvBuf, transferBufSize);
+    //     //     if (ret == ESP_OK)
+    //     //         std::cout << recvBuf << std::endl;
+    //     //     vTaskDelay(600 / portTICK_PERIOD_MS);
+    //     // }
+    //     // else
+    //     //     vTaskDelay(600 / portTICK_PERIOD_MS);
+    // }
 }
