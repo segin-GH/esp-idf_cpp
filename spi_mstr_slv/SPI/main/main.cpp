@@ -27,6 +27,9 @@ class SpiMaster
 {
 private:
     spi_device_handle_t m_spi;
+    const int sndQueueLen = 1;
+    xQueueHandle sndQueue;
+    WORD_ALIGNED_ATTR char dataBuff[150] = "";
 
 public:
     SpiMaster(spi_host_device_t host, int mosi, int miso, int sclk, int cs)
@@ -56,44 +59,71 @@ public:
         assert(ret == ESP_OK);
         ret = spi_bus_add_device(host, &devcfg, &m_spi);
         assert(ret == ESP_OK);
+
+        /* SLAVE SELECT PIN CONFIG  */
+        gpio_pad_select_gpio((gpio_num_t)cs);
+        gpio_set_direction((gpio_num_t)cs, GPIO_MODE_OUTPUT);
+
+        sndQueue = xQueueCreate(sndQueueLen, sizeof(dataBuff));
     }
 
-    esp_err_t transfer(char txBuff[], int tx_len, char rxBuff[], int rx_len)
+    void selectSlave(int SlaveNum, int level)
     {
-        spi_transaction_t t;
-        memset(&t, 0, sizeof(t));
-        t.length = (tx_len + rx_len) * 8;
-        t.tx_buffer = txBuff;
-        t.rx_buffer = rxBuff;
-        // t.user = (void *)0; // Set the slave ID to 0
-        return spi_device_transmit(m_spi, &t);
+        gpio_set_level((gpio_num_t)SlaveNum, level);
+    }
+
+    void sendToSlave(char *data)
+    {
+
+        long err = xQueueSend(sndQueue, data, 1500 / portTICK_PERIOD_MS);
+        if (!err)
+        {
+            printf("[queue] Could not add to queue\n.");
+        }
+    }
+
+    esp_err_t transfer(char *rxBuff)
+    {
+        WORD_ALIGNED_ATTR char sendBuf[150] = "";
+        /* TODO spi transcation should be private? */
+        if (xQueueReceive(sndQueue, sendBuf, 5000 / portTICK_PERIOD_MS))
+        {
+            spi_transaction_t t;
+            memset(&t, 0, sizeof(t));
+            /* TODO code smells bad can we hardcode the value of the length ? */
+            t.length = (130 + 130) * 8;
+            t.tx_buffer = sendBuf;
+            t.rx_buffer = rxBuff;
+            // t.user = (void *)0; // Set the slave ID to 0
+            return spi_device_transmit(m_spi, &t);
+        }
+        return ESP_FAIL;
     }
 };
 
 extern "C" void app_main(void)
 {
     std::cout << "SPI MASTER" << std::endl;
-    gpio_pad_select_gpio((gpio_num_t)15);
-    gpio_set_direction((gpio_num_t)15, GPIO_MODE_OUTPUT);
     SpiMaster spi_master(HSPI_HOST, GPIO_MOSI, GPIO_MISO, GPIO_SCLK, GPIO_CS);
 
     char sendBuf[130] = {0};
     char recvBuf[130] = {0};
 
-    gpio_set_level((gpio_num_t)15, 0);
+    spi_master.selectSlave(15, 0);
 
     for (int i = 0; i < 10; i++)
     {
         int res = snprintf(sendBuf, sizeof(sendBuf), "%i I am Master obey Slaves", i);
         if (res >= sizeof(sendBuf))
             printf("Data truncated\n");
+        spi_master.sendToSlave(sendBuf);
 
-        esp_err_t ret = spi_master.transfer(sendBuf, transferBufSize, recvBuf, transferBufSize);
+        esp_err_t ret = spi_master.transfer(recvBuf);
         if (ret == ESP_OK)
             std::cout << recvBuf << std::endl;
         vTaskDelay(500 / portTICK_PERIOD_MS);
     }
-    gpio_set_level((gpio_num_t)15, 1);
+    spi_master.selectSlave(15, 1);
 
     for (;;)
         vTaskDelete(NULL);

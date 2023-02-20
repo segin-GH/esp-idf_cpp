@@ -20,7 +20,6 @@ int intr_trig = 0;
 
 // xQueueHandle queue;
 // static const int queue_len = 5;
-WORD_ALIGNED_ATTR char dataBuff[150] = "";
 
 static void IRAM_ATTR gpio_isr_handler(void *args)
 {
@@ -38,6 +37,7 @@ private:
     spi_host_device_t m_host;
     const int queue_len = 20;
     xQueueHandle queue;
+    WORD_ALIGNED_ATTR char dataBuff[150] = "";
 
 public:
     SpiSlave(spi_host_device_t host, int mosi, int miso, int sclk)
@@ -110,9 +110,10 @@ void logWithUART(void *args)
     int count = 0;
     while (true)
     {
-        sprintf(dataBuff, "uartDATA%i", count);
-        spi_slave.dataToSnd(dataBuff);
-        memset(dataBuff, 0, sizeof(dataBuff));
+        WORD_ALIGNED_ATTR char uartDataBuff[129] = "";
+        sprintf(uartDataBuff, "uartDATA%i", count);
+        spi_slave.dataToSnd(uartDataBuff);
+        memset(uartDataBuff, 0, sizeof(uartDataBuff));
         ++count;
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
@@ -121,7 +122,7 @@ void logWithUART(void *args)
 extern "C" void app_main()
 {
     // int n = 0;
-    // queue = xQueueCreate(queue_len, sizeof(dataBuff));
+    // queue = xQueueCreate(queue_len, sizeof(uartDataBuff));
     std::cout << "SPI SLAVE" << std::endl;
 
     gpio_set_direction((gpio_num_t)CHIP_SELECT, GPIO_MODE_INPUT);
@@ -164,6 +165,6 @@ extern "C" void app_main()
             // else
             //     vTaskDelay(600 / portTICK_PERIOD_MS);
         }
-        vTaskDelay(10/portTICK_PERIOD_MS);
+        vTaskDelay(10 / portTICK_PERIOD_MS);
     }
 }
