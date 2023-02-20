@@ -73,11 +73,11 @@ public:
     }
     void dataToSnd(char *data)
     {
-        std::cout << data << std::endl;
+        // std::cout << data << std::endl;
         long err = xQueueSend(queue, data, 1500 / portTICK_PERIOD_MS);
         if (!err)
         {
-            printf("[queue] Could not add to queue\n.");
+            printf("[queue] Could not add to queue. \n");
         }
     }
 
@@ -87,7 +87,7 @@ public:
 
         if (xQueueReceive(queue, sendBuf, 5000 / portTICK_PERIOD_MS))
         {
-            std::cout << "xQueueReceive :: " << sendBuf << std::endl;
+            // std::cout << "xQueueReceive :: " << sendBuf << std::endl;
             /* TODO can spi_transaction_t in private ? */
             spi_slave_transaction_t t;
             memset(&t, 0, sizeof(t));
@@ -115,7 +115,7 @@ void logWithUART(void *args)
         spi_slave.dataToSnd(uartDataBuff);
         memset(uartDataBuff, 0, sizeof(uartDataBuff));
         ++count;
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        vTaskDelay(3000 / portTICK_PERIOD_MS);
     }
 }
 
