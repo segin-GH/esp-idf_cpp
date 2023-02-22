@@ -1,3 +1,8 @@
+
+
+/* TODO can spi_transaction_t in private ? */
+// TODO should u dont need pull up on miso ?
+// TODO figure out a way to use m_host rather than passing it as args in function.
 #include <iostream>
 #include <cstring>
 #include "freertos/FreeRTOS.h"
@@ -63,7 +68,6 @@ public:
         // Enable pull-ups on SPI lines so we don't detect rogue pulses when no master is connected.
         gpio_set_pull_mode((gpio_num_t)mosi, GPIO_PULLUP_ONLY);
         gpio_set_pull_mode((gpio_num_t)sclk, GPIO_PULLUP_ONLY);
-        // TODO should u dont need pull up on miso ?
 
         // Initialize SPI slave interface
         ret = spi_slave_initialize(host, &buscfg, &slvcfg, SPI_DMA_CH_AUTO);
@@ -88,14 +92,11 @@ public:
         if (xQueueReceive(queue, sendBuf, 5000 / portTICK_PERIOD_MS))
         {
             // std::cout << "xQueueReceive :: " << sendBuf << std::endl;
-            /* TODO can spi_transaction_t in private ? */
             spi_slave_transaction_t t;
             memset(&t, 0, sizeof(t));
             t.length = (130 + 130) * 8;
             t.tx_buffer = sendBuf;
             t.rx_buffer = recvBuf;
-            // t.user = (void *)0; // Set the slave ID to 0
-            // TODO figure out a way to use m_host rather than passing it as args in function.
             return spi_slave_transmit(host, &t, portMAX_DELAY);
             memset(sendBuf, 0, sizeof(sendBuf));
         }
@@ -115,14 +116,12 @@ void logWithUART(void *args)
         spi_slave.dataToSnd(uartDataBuff);
         memset(uartDataBuff, 0, sizeof(uartDataBuff));
         ++count;
-        vTaskDelay(500/ portTICK_PERIOD_MS);
+        vTaskDelay(500 / portTICK_PERIOD_MS);
     }
 }
 
 extern "C" void app_main()
 {
-    // int n = 0;
-    // queue = xQueueCreate(queue_len, sizeof(uartDataBuff));
     std::cout << "SPI SLAVE" << std::endl;
 
     gpio_set_direction((gpio_num_t)CHIP_SELECT, GPIO_MODE_INPUT);
@@ -141,29 +140,16 @@ extern "C" void app_main()
         NULL,
         APP_CPU_NUM);
 
-    // WORD_ALIGNED_ATTR char sendBuf[129] = "";
     WORD_ALIGNED_ATTR char recvBuf[130] = "";
 
     for (;;)
     {
-        // std::cout << "INSIDE WHILE LOOP" << intr_trig << std::endl;
         if (masterSelectedMe)
         {
-            // memset(sendBuf, 0, sizeof(129));
             memset(recvBuf, 0, sizeof(130));
-            // sprintf(sendBuf, "This is the receiver %i", n++);
-            // // std::cout << "master slected me sending data " << sendBuf << std::endl;
-
-            // if (xQueueReceive(queue, &sendBuf, 5000 / portTICK_PERIOD_MS))
-            {
-                esp_err_t ret = spi_slave.transmit(HSPI_HOST, recvBuf);
-                if (ret == ESP_OK)
-                    std::cout << recvBuf << std::endl;
-                // vTaskDelay(1000 / portTICK_PERIOD_MS);
-            }
-            // }
-            // else
-            //     vTaskDelay(600 / portTICK_PERIOD_MS);
+            esp_err_t ret = spi_slave.transmit(HSPI_HOST, recvBuf);
+            if (ret == ESP_OK)
+                std::cout << recvBuf << std::endl;
         }
         vTaskDelay(10 / portTICK_PERIOD_MS);
     }
