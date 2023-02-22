@@ -1,4 +1,5 @@
 #include <iostream>
+#include <cstring>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
@@ -8,16 +9,18 @@ int queueLen = 10;
 
 extern "C" void app_main(void)
 {
+    queue = xQueueCreate(queueLen, (sizeof(char) * 1000 ));
+    
     for (;;)
     {
-        queue = xQueueCreate(queueLen, sizeof(std::string));
-        std::string str = "data";
-        xQueueSend(queue, &str, portMAX_DELAY);
+        char str[1000] ="abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz";
+        xQueueSend(queue, str, portMAX_DELAY);
 
-        std::string recvStr;
-        xQueueReceive(queue, &recvStr, portMAX_DELAY);
+        char recvBuff[1000] = "";
+        memset(recvBuff, 0 ,sizeof (1000));
+        xQueueReceive(queue, &recvBuff, portMAX_DELAY);
 
-        std::cout << recvStr << std::endl;
-        vTaskDelay(1000/portTICK_PERIOD_MS);
+        std::cout << recvBuff << std::endl;
+        vTaskDelay(10/portTICK_PERIOD_MS);
     }
 }
