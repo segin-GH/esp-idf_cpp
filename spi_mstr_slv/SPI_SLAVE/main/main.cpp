@@ -110,12 +110,12 @@ void logWithUART(void *args)
     int count = 0;
     while (true)
     {
-        WORD_ALIGNED_ATTR char uartDataBuff[129] = "";
-        sprintf(uartDataBuff, "uartDATA%i", count);
+        WORD_ALIGNED_ATTR char uartDataBuff[130] = "";
+        sprintf(uartDataBuff, "uartDATA %i ", count);
         spi_slave.dataToSnd(uartDataBuff);
         memset(uartDataBuff, 0, sizeof(uartDataBuff));
         ++count;
-        vTaskDelay(3000 / portTICK_PERIOD_MS);
+        vTaskDelay(500/ portTICK_PERIOD_MS);
     }
 }
 
@@ -142,7 +142,7 @@ extern "C" void app_main()
         APP_CPU_NUM);
 
     // WORD_ALIGNED_ATTR char sendBuf[129] = "";
-    WORD_ALIGNED_ATTR char recvBuf[129] = "";
+    WORD_ALIGNED_ATTR char recvBuf[130] = "";
 
     for (;;)
     {
@@ -150,7 +150,7 @@ extern "C" void app_main()
         if (masterSelectedMe)
         {
             // memset(sendBuf, 0, sizeof(129));
-            memset(recvBuf, 0, sizeof(129));
+            memset(recvBuf, 0, sizeof(130));
             // sprintf(sendBuf, "This is the receiver %i", n++);
             // // std::cout << "master slected me sending data " << sendBuf << std::endl;
 
@@ -159,7 +159,7 @@ extern "C" void app_main()
                 esp_err_t ret = spi_slave.transmit(HSPI_HOST, recvBuf);
                 if (ret == ESP_OK)
                     std::cout << recvBuf << std::endl;
-                vTaskDelay(600 / portTICK_PERIOD_MS);
+                // vTaskDelay(1000 / portTICK_PERIOD_MS);
             }
             // }
             // else

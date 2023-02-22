@@ -86,7 +86,7 @@ public:
     {
         WORD_ALIGNED_ATTR char sendBuf[150] = "";
         /* TODO spi transcation should be private? */
-        if (xQueueReceive(sndQueue, sendBuf, 5000 / portTICK_PERIOD_MS))
+        if (xQueueReceive(sndQueue, sendBuf, portMAX_DELAY))
         {
             spi_transaction_t t;
             memset(&t, 0, sizeof(t));
@@ -106,16 +106,23 @@ extern "C" void app_main(void)
     std::cout << "SPI MASTER" << std::endl;
     SpiMaster spi_master(HSPI_HOST, GPIO_MOSI, GPIO_MISO, GPIO_SCLK, GPIO_CS);
 
-    char sendBuf[130] = {0};
-    char recvBuf[130] = {0};
+    char sendBuf[130] = "";
+    char recvBuf[130] = "";
+    memset(sendBuf, 0, sizeof(sendBuf));
+    memset(recvBuf, 0, sizeof(recvBuf));
 
     spi_master.selectSlave(15, 0);
+    vTaskDelay(10 / portTICK_PERIOD_MS);
 
-    for (int i = 0; i < 10; i++)
+    for (int i = 0; i < 100; i++)
     {
-        int res = snprintf(sendBuf, sizeof(sendBuf), "%i I am Master obey Slaves", i);
-        if (res >= sizeof(sendBuf))
-            printf("Data truncated\n");
+        memset(sendBuf, 0, sizeof(sendBuf));
+        memset(recvBuf, 0, sizeof(recvBuf));
+
+        sprintf(sendBuf, "%i I am Master obey Slaves", i);
+        // if (res >= sizeof(sendBuf))
+        // printf("Data truncated\n");
+
         spi_master.sendToSlave(sendBuf);
 
         esp_err_t ret = spi_master.transfer(recvBuf);
@@ -123,6 +130,7 @@ extern "C" void app_main(void)
             std::cout << recvBuf << std::endl;
         vTaskDelay(500 / portTICK_PERIOD_MS);
     }
+    vTaskDelay(10 / portTICK_PERIOD_MS);
     spi_master.selectSlave(15, 1);
 
     for (;;)
